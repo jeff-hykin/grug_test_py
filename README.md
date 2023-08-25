@@ -1,6 +1,6 @@
 # What is this?
 
-Simple automated tests; for lazy devs who don't have time to test.
+Simple automated tests; for [grug](https://grugbrain.dev/) devs like me who don't have time to test.
 
 # How do I use this?
 
@@ -8,6 +8,7 @@ Simple automated tests; for lazy devs who don't have time to test.
 
 ```python
 from grug_test import GrugTest
+import os
 
 # 1. say where the tests will be saved
 grug_test = GrugTest(
@@ -31,13 +32,12 @@ def repeat(a,times):
 3. That's all the setup!
 - The "test cases" are generated when you set `GrugTest(record_io=True)` and run your normal workflow
 - Commit your generated "test cases" (input/output files) to git
-- Brea--I mean ""optimize"" your code real good
-- Now test your totally-not-broken code by again, running your normal workflow BUT with `GrugTest(replay_inputs=True)`
-- Once that's finished, the git-diff will show you all your failing test cases
-- If you like/want the new output; well you just generated your new test cases; commit the files and you're done
+- Then when you want to test, run your normal workflow with `GrugTest(replay_inputs=True)`. Once its done git-diff will show you all the changes.
+    - If you like the changes, well volia, those are your freshly-written test cases
+    - If you don't like the changes, well then it looks like you've got some dev work to do
 
-# Q&A 
+# Q&A
 
 Does this work with ANY pure function?
 
-- Almost, the arguments need to be hashable and seralizable. For example, if you pass a function as an argument then grug_test can't really save/load that function when `replay_inputs=True`. However, you can make almost any class seralizable, just checkout how to make a class work with python-pickle, or (even better) do `from grug_test import yaml` and make your class be yaml-seralizable (tutorial/example [here](https://github.com/jeff-hykin/ez_yaml/blob/8b4dce8bf495484feb50f84468ffc6f776c357d4/README.md#custom-yaml-tags-example))
+- Almost, the arguments need to be hashable and seralizable. For example, if you pass a lambda function as an argument then grug_test can't really save/load that lambda function when `replay_inputs=True`. However, you can make almost any normal class seralizable, just checkout a tutorial on making a class work with python-pickle, or (even better) do `from grug_test import yaml` and make your class be yaml-seralizable (tutorial/example [here](https://github.com/jeff-hykin/ez_yaml/blob/8b4dce8bf495484feb50f84468ffc6f776c357d4/README.md#custom-yaml-tags-example))

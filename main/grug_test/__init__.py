@@ -1,20 +1,27 @@
 from warnings import warn
 import pickle
 import os
+import math
+import random
+import functools
 
 from .__dependencies__.ez_yaml import yaml
-from .__dependencies__.blissful_basics import FS, bytes_to_valid_string, valid_string_to_bytes, indent, super_hash
+from .__dependencies__ import ez_yaml
+from .__dependencies__.blissful_basics import FS, bytes_to_valid_string, valid_string_to_bytes, indent, super_hash, print, randomly_pick_from
+from .__dependencies__.informative_iterator import ProgressBar
 
 # Version 1.0
-    # add counting-caps (max IO for a particular function, or in-general)
+    # DONE: add counting-caps (max IO for a particular function, or in-general)
+    # add CLI tools
+    # create add_input_for(func_id, args, kwargs, input_name)
     # use threads to offload the work
     # report which tests have recordings but were not tested during replay mode (e.g. couldn't reach/find function)
     # autodetect the git folder
-    # add CLI tools
 # Version 2.0
+    # fuzzing/coverage-tools; like analyzing boolean arguments, and generating inputs for all combinations of them
+    # option to record stdout/stderr of a function
     # add `additional_inputs` in the decorator
     # add file path args to the decorator that create file copies, then inject/replace the path arguments
-    # fix the problem of tuples getting converted to lists (changes hash) when yamlizing
 
 yaml.width = float("Infinity")
 
@@ -66,6 +73,9 @@ class GrugTest:
             for a,b in zip(range(10), range(30, 40)):
                 add_nums(a,b)
     """
+    overflow_strats = [ 'keep_old', 'delete_random', ]
+    input_file_extension = ".input.yaml"
+    output_file_extension = ".output.yaml"
     def __init__(
         self,
         name="__default__",
@@ -73,17 +83,20 @@ class GrugTest:
         replay_inputs=False,
         record_io=True,
         verbose=False,
+        max_io_per_func=None,
+        overflow_strat="keep_old",
         project_folder="./", # FIXME: walk up until .git
         test_folder="./tests/grug_tests/", # FIXME: walk up until .git
         # use_threading=True,
     ):
-        self.name           = name
-        self.fully_disable  = fully_disable
-        self.replay_inputs  = replay_inputs
-        self.record_io      = record_io
-        self.verbose        = verbose
-        self.project_folder = project_folder
-        self.test_folder    = test_folder
+        self.name            = name
+        self.fully_disable   = fully_disable
+        self.replay_inputs   = replay_inputs
+        self.record_io       = record_io
+        self.verbose         = verbose
+        self.max_io_per_func = max_io_per_func if max_io_per_func != None else math.inf
+        self.project_folder  = project_folder
+        self.test_folder     = test_folder
         
         # 
         # setup grug info
@@ -101,11 +114,12 @@ class GrugTest:
             **self.grug_info,
             "functions_with_tests": self.grug_info.get("functions_with_tests", []),
         }
+        self.has_been_tested = { name: False for name in self.grug_info["functions_with_tests"] }
     
     # 
     # decorator
     # 
-    def __call__(self, *args, how_to_import=None, func_name=None, test_name=None, **kwargs):
+    def __call__(self, *args, func_name=None, max_io=None, record_io=None, additional_io_per_run=None, **kwargs):
         """
         Example:
             grug_test = GrugTest(
@@ -124,101 +138,166 @@ class GrugTest:
                 add_nums(a,b)
         
         """
+        if record_io == None:
+            record_io = self.record_io
+        if max_io == None:
+            max_io = self.max_io_per_func
+        if additional_io_per_run == None:
+            additional_io_per_run = math.inf
+        
         source = _get_path_of_caller()
         def decorator(function_being_wrapped):
+            nonlocal max_io
             if self.fully_disable:
                 # no wrapping
                 return function_being_wrapped
             
-            # TODO: record self inside grug_info
-            
+            function_name = None
+            grug_folder_for_this_func = None
+            decorator.record_io = record_io
+            decorator.replaying_inputs = False
             if self.record_io or self.replay_inputs:
-                relative_path = self.test_folder+"/"+FS.make_relative_path(coming_from=self.project_folder, to=source)
+                # 
+                # setup name/folder
+                # 
+                relative_path_to_function = FS.normalize(FS.make_relative_path(coming_from=self.project_folder, to=source))
+                relative_path_to_test = self.test_folder+"/"+relative_path_to_function
                 function_name = func_name or getattr(function_being_wrapped, "__name__", "<unknown_func>")
-                grug_folder_for_this_func = relative_path+"/"+function_name
+                function_id = f"{relative_path_to_function}:{function_name}"
+                grug_folder_for_this_func = relative_path_to_test+"/"+function_name
+                if function_id not in self.grug_info["functions_with_tests"]:
+                    self.grug_info["functions_with_tests"].append(function_id)
+                
                 FS.ensure_is_folder(grug_folder_for_this_func)
-            
-            if self.replay_inputs:
-                if self.verbose: print(f"replaying inputs for: {function_name}")
-                for path in FS.iterate_file_paths_in(grug_folder_for_this_func):
-                    if path.endswith(".input.yaml"):
-                        if self.verbose: print(f"     loading: {FS.basename(path)}")
+                input_files = [ each for each in FS.list_file_paths_in(grug_folder_for_this_func) if each.endswith(self.input_file_extension) ]
+                # convert additional_io_per_run to a max_io value
+                if additional_io_per_run > 0 and max_io > len(input_files):
+                    max_io = min(max_io, len(input_files) + additional_io_per_run)
+                
+                # 
+                # replay inputs
+                # 
+                if self.replay_inputs and not self.has_been_tested.get(function_id, False):
+                    if self.verbose: print(f"replaying inputs for: {function_name}")
+                    decorator.replaying_inputs = True
+                    original_record_io_value = decorator.record_io
+                    for progress, path in ProgressBar(input_files, disable_logging=not self.verbose):
+                        progress.text = f" loading: {FS.basename(path)}"
                         try:
                             args, kwargs = ez_yaml.to_object(file_path=path)["pickled_args_and_kwargs"]
-                            output, the_error = self.record_output(function_being_wrapped, args, kwargs, path=path[0:-len(".input.yaml")] + ".output.yaml", function_name=function_name)
+                            output, the_error = self.record_output(
+                                function_being_wrapped,
+                                args,
+                                kwargs,
+                                path=path[0:-len(self.input_file_extension)] + self.output_file_extension,
+                                function_name=function_name,
+                                source=source,
+                            )
                         except Exception as error:
                             warn(error)
+                    decorator.replaying_inputs = False
+                    self.has_been_tested[function_id] = True
             
+            @functools.wraps(function_being_wrapped) # fixes the stack-trace to make the decorator invisible
             def wrapper(*args, **kwargs):
-                grug_is_recording = self.record_io
-                inputs_were_saved = False
+                # normal run
+                if decorator.replaying_inputs or not decorator.record_io:
+                    return function_being_wrapped(*args, **kwargs)
+                
+                # 
+                # hash the inputs
+                #
                 input_hash = None
-                if grug_is_recording:
+                try:
+                    arg = (args, kwargs)
+                    input_hash = super_hash(arg)[0:12] # 12 chars is plenty for being unique 
+                except Exception as error:
+                    error_message = f"\n\n\nFor a grug test on this function: {repr(function_name)} I tried to hash the inputs but I wasn't able to.\nHere are the input types:\n    args: {repr(tuple(type(each) for each in args))}\n    kwargs: {repr(tuple(type(each) for each in kwargs.values()))}\nAnd here's the error: {error}"
+                    warn(error_message, category=None, stacklevel=1, source=source)
+                    # run function like normal
+                    return function_being_wrapped(*args, **kwargs)
+                
+                input_file_path  = grug_folder_for_this_func+f"/{input_hash}{self.input_file_extension}"
+                output_file_path = grug_folder_for_this_func+f"/{input_hash}{self.output_file_extension}"
+                
+                # check for effectively normal run
+                input_already_existed = FS.is_file(input_file_path)
+                is_overflowing = len(input_files) >= max_io
+                shouldnt_save_new_io = not input_already_existed and is_overflowing and self.overflow_strat == 'keep_old'
+                if shouldnt_save_new_io:
+                    return function_being_wrapped(*args, **kwargs)
+                
+                try:
                     # 
-                    # hash the inputs
+                    # input limiter
                     # 
-                    try:
-                        arg = (args, kwargs)
-                        input_hash = super_hash(arg)[0:12] # 12 chars is plenty for being unique 
-                    except Exception as error:
-                        warn(f"\n\n\nFor a grug test on this function: {repr(function_name)} I tried to hash the inputs but I wasn't able to.\nHere are the input types:\n    args: {repr(tuple(type(each) for each in args))}\n    kwargs: {repr(tuple(type(each) for each in kwargs.values()))}\nAnd here's the error: {error}", category=None, stacklevel=1, source=source)
+                    if is_overflowing and not input_already_existed and self.overflow_strat == 'delete_random':
+                        input_to_delete  = randomly_pick_from(input_files)
+                        output_to_delete = input_to_delete[0:-len(self.input_file_extension)]+self.output_file_extension
+                        FS.remove(input_to_delete)
+                        FS.remove(output_to_delete)
+                        input_files.remove(input_to_delete)
                     
                     # 
                     # save the inputs
                     # 
-                    try:
-                        yaml_path = grug_folder_for_this_func+f"/{input_hash}.input.yaml"
-                        if not FS.exists(yaml_path):
-                            # clear the way
-                            FS.write(data="", to=yaml_path)
-                            # if all the args are yaml-able this will work
-                            try:
-                                ez_yaml.to_file(
-                                    obj=dict(
-                                        args=args,
-                                        kwargs=kwargs,
-                                        pickled_args_and_kwargs=YamlPickled(arg),
-                                    ),
-                                    file_path=yaml_path,
-                                )
-                            except Exception as error:
-                                # if all the args are at least pickle-able, this will work
-                                converted_args = list(args)
-                                converted_kwargs = dict(converted_kwargs)
-                                for index,each in enumerate(converted_args):
-                                    try:
-                                        yaml.to_string(each)
-                                    except Exception as error:
-                                        converted_args[index] = YamlPickled(each)
-                                for each_key, each_value in converted_kwargs.items():
-                                    try:
-                                        yaml.to_string(each_value)
-                                    except Exception as error:
-                                        converted_kwargs[each_key] = YamlPickled(each_value)
-                                
-                                ez_yaml.to_file(
-                                    obj=dict(
-                                        args=converted_args,
-                                        kwargs=converted_kwargs,
-                                        pickled_args_and_kwargs=YamlPickled(arg),
-                                    ),
-                                    file_path=yaml_path,
-                                )
-                        inputs_were_saved = True
-                    except Exception as error:
-                        raise error
-                        warn(f"\n\n\nFor a grug test on this function: {repr(function_name)} I tried to seralize the inputs but I wasn't able to.\nHere are the input types:\n    args: {repr(tuple(type(each) for each in args))}\n    kwargs: {repr(tuple(type(each) for each in kwargs.values()))}\nAnd here's the error: {error}", category=None, stacklevel=1, source=source)
+                    if not input_already_existed:
+                        # clear the way (create parent folders)
+                        FS.write(data="", to=input_file_path)
+                        # if all the args are yaml-able this will work
+                        try:
+                            ez_yaml.to_file(
+                                obj=dict(
+                                    args=args,
+                                    kwargs=kwargs,
+                                    pickled_args_and_kwargs=YamlPickled(arg),
+                                ),
+                                file_path=input_file_path,
+                            )
+                        except Exception as error:
+                            # if all the args are at least pickle-able, this will work
+                            converted_args = list(args)
+                            converted_kwargs = dict(kwargs)
+                            for index,each in enumerate(converted_args):
+                                try:
+                                    yaml.to_string(each)
+                                except Exception as error:
+                                    converted_args[index] = YamlPickled(each)
+                            for each_key, each_value in converted_kwargs.items():
+                                try:
+                                    yaml.to_string(each_value)
+                                except Exception as error:
+                                    converted_kwargs[each_key] = YamlPickled(each_value)
+                            
+                            ez_yaml.to_file(
+                                obj=dict(
+                                    args=converted_args,
+                                    kwargs=converted_kwargs,
+                                    pickled_args_and_kwargs=YamlPickled(arg),
+                                ),
+                                file_path=input_file_path,
+                            )
+                        input_files.append(input_file_path)
+                except Exception as error:
+                    raise error
+                    warn(f"\n\n\nFor a grug test on this function: {repr(function_name)} I tried to seralize the inputs but I wasn't able to.\nHere are the input types:\n    args: {repr(tuple(type(each) for each in args))}\n    kwargs: {repr(tuple(type(each) for each in kwargs.values()))}\nAnd here's the error: {error}", category=None, stacklevel=1, source=source)
+                    # run function like normal
+                    return function_being_wrapped(*args, **kwargs)
                 
+                # 
+                # save the output
+                # 
                 output, the_error = self.record_output(
                     function_being_wrapped,
                     args,
                     kwargs,
-                    path=grug_folder_for_this_func+f"/{input_hash}.output.yaml",
+                    path=output_file_path,
                     function_name=function_name,
-                    avoid_saving_if=not (inputs_were_saved and grug_is_recording),
+                    source=source,
                 )
-                    
-                if the_error != None and not self.replay_inputs:
+                
+                # raise errors like normal
+                if the_error != None:
                     raise the_error
                 
                 return output
@@ -236,7 +315,7 @@ class GrugTest:
             return decorator
     
     @staticmethod
-    def record_output(func, args, kwargs, path, function_name, avoid_saving_if=False,):
+    def record_output(func, args, kwargs, path, function_name, source):
         the_error = None
         output = None
         try:
@@ -244,45 +323,41 @@ class GrugTest:
         except Exception as error:
             the_error = error
         
-        # 
-        # save output
-        # 
-        if not avoid_saving_if:
-            # clear the way
-            FS.write(data="", to=path)
+        # clear the way (generates parent folders if needed)
+        FS.write(data="", to=path, force=True)
+        try:
+            # write the output
+            ez_yaml.to_file(
+                obj={
+                    "error_output": repr(the_error),
+                    "normal_output": output,
+                },
+                file_path=path,
+            )
+        except Exception as error:
             try:
-                # write the output
-                ez_yaml.to_file(
-                    obj={
-                        "error_output": repr(the_error),
-                        "normal_output": output 
-                    },
-                    file_path=path,
-                )
+                # try to be informative if possible
+                if type(output) == tuple:
+                    ez_yaml.to_file(
+                        obj={
+                            "error_output": repr(the_error),
+                            "normal_output": tuple(
+                                YamlPickled(each)
+                                    for each in output
+                            ),
+                        },
+                        file_path=path,
+                    )
+                else:
+                    ez_yaml.to_file(
+                        obj={
+                            "error_output": repr(the_error),
+                            "normal_output": YamlPickled(output),
+                        },
+                        file_path=path
+                    )
             except Exception as error:
-                try:
-                    # try to be informative if possible
-                    if type(output) == tuple:
-                        ez_yaml.to_file(
-                            obj={
-                                "error_output": repr(the_error),
-                                "normal_output": tuple(
-                                    YamlPickled(each)
-                                        for each in output
-                                ),
-                            },
-                            file_path=path,
-                        )
-                    else:
-                        ez_yaml.to_file(
-                            obj={
-                                "error_output": repr(the_error),
-                                "normal_output": YamlPickled(output),
-                            },
-                            file_path=path
-                        )
-                except Exception as error:
-                    warn(f"\n\n\nFor a grug test on this function: {repr(function_name)} I tried to seralize the output but I wasn't able to.\nHere is the output type:\n    output: {type(output)}\nAnd here's the error: {error}", category=None, stacklevel=1, source=source)
+                warn(f"\n\n\nFor a grug test on this function: {repr(function_name)} I tried to seralize the output but I wasn't able to.\nHere is the output type:\n    output: {type(output)}\nAnd here's the error: {error}", category=None, stacklevel=1, source=source)
     
         return output, the_error
         
