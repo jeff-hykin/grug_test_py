@@ -7,7 +7,7 @@ import functools
 
 from .__dependencies__.ez_yaml import yaml
 from .__dependencies__ import ez_yaml
-from .__dependencies__.blissful_basics import FS, bytes_to_valid_string, valid_string_to_bytes, indent, super_hash, print, randomly_pick_from
+from .__dependencies__.blissful_basics import FS, bytes_to_valid_string, valid_string_to_bytes, indent, super_hash, print, randomly_pick_from, stringify
 from .__dependencies__.informative_iterator import ProgressBar
 
 # Version 1.0
@@ -212,7 +212,7 @@ class GrugTest:
                     arg = (args, kwargs)
                     input_hash = super_hash(arg)[0:12] # 12 chars is plenty for being unique 
                 except Exception as error:
-                    error_message = f"\n\n\nFor a grug test on this function: {repr(function_name)} I tried to hash the inputs but I wasn't able to.\nHere are the input types:\n    args: {repr(tuple(type(each) for each in args))}\n    kwargs: {repr(tuple(type(each) for each in kwargs.values()))}\nAnd here's the error: {error}"
+                    error_message = f"\n\n\nFor a grug test on this function: {repr(function_name)}\n" + indent(f"I tried to hash the inputs but I wasn't able to.\nHere are the input types:\n    args: {indent(stringify(tuple(type(each) for each in args)))}\n    kwargs: {indent(stringify({ key: type(value) for key, value in kwargs.items()}))}\n\nAnd here's the error:\n{indent(error)}\n")
                     warn(error_message, category=None, stacklevel=1, source=source)
                     # run function like normal
                     return function_being_wrapped(*args, **kwargs)
@@ -242,17 +242,20 @@ class GrugTest:
                     # save the inputs
                     # 
                     if not input_already_existed:
-                        # clear the way (create parent folders)
-                        FS.write(data="", to=input_file_path)
+                        FS.ensure_is_folder(FS.parent_path(input_file_path))
+                        # encase its a folder for some reason
+                        FS.remove(input_file_path)
                         # if all the args are yaml-able this will work
                         try:
-                            ez_yaml.to_file(
-                                obj=dict(
-                                    args=args,
-                                    kwargs=kwargs,
-                                    pickled_args_and_kwargs=YamlPickled(arg),
-                                ),
-                                file_path=input_file_path,
+                            FS.write(
+                                path=input_file_path,
+                                data=ez_yaml.to_string(
+                                    obj=dict(
+                                        args=args,
+                                        kwargs=kwargs,
+                                        pickled_args_and_kwargs=YamlPickled(arg),
+                                    ),
+                                )
                             )
                         except Exception as error:
                             # if all the args are at least pickle-able, this will work
@@ -269,17 +272,20 @@ class GrugTest:
                                 except Exception as error:
                                     converted_kwargs[each_key] = YamlPickled(each_value)
                             
-                            ez_yaml.to_file(
-                                obj=dict(
-                                    args=converted_args,
-                                    kwargs=converted_kwargs,
-                                    pickled_args_and_kwargs=YamlPickled(arg),
-                                ),
-                                file_path=input_file_path,
+                            FS.write(
+                                path=input_file_path,
+                                data=ez_yaml.to_string(
+                                    obj=dict(
+                                        args=converted_args,
+                                        kwargs=converted_kwargs,
+                                        pickled_args_and_kwargs=YamlPickled(arg),
+                                    ),
+                                )
                             )
                         input_files.append(input_file_path)
                 except Exception as error:
-                    warn(f"\n\n\nFor a grug test on this function: {repr(function_name)} I tried to seralize the inputs but I wasn't able to.\nHere are the input types:\n    args: {repr(tuple(type(each) for each in args))}\n    kwargs: {repr(tuple(type(each) for each in kwargs.values()))}\nAnd here's the error: {error}", category=None, stacklevel=1, source=source)
+                    FS.remove(input_file_path)
+                    warn(f"\n\n\nFor a grug test on this function: {repr(function_name)}\n"+indent(f"I tried to seralize the inputs but I wasn't able to.\nHere are the input types:\n    args: {indent(stringify(tuple(type(each) for each in args)))}\n    kwargs: {indent(stringify({ key: type(value) for key, value in kwargs.items()}))}\n\nAnd here's the error:\n{indent(error)}\n"), category=None, stacklevel=1, source=source)
                     # run function like normal
                     return function_being_wrapped(*args, **kwargs)
                 
@@ -323,40 +329,48 @@ class GrugTest:
             the_error = error
         
         # clear the way (generates parent folders if needed)
-        FS.write(data="", to=path, force=True)
+        FS.ensure_is_folder(FS.parent_path(path))
+        # encase its a folder for some reason
+        FS.remove(path)
         try:
-            # write the output
-            ez_yaml.to_file(
-                obj={
-                    "error_output": repr(the_error),
-                    "normal_output": output,
-                },
-                file_path=path,
+            FS.write(
+                path=path,
+                data=ez_yaml.to_string(
+                    obj={
+                        "error_output": repr(the_error),
+                        "normal_output": output,
+                    },
+                )
             )
         except Exception as error:
             try:
                 # try to be informative if possible
                 if type(output) == tuple:
-                    ez_yaml.to_file(
-                        obj={
-                            "error_output": repr(the_error),
-                            "normal_output": tuple(
-                                YamlPickled(each)
-                                    for each in output
-                            ),
-                        },
-                        file_path=path,
+                    FS.write(
+                        path=path,
+                        data=ez_yaml.to_string(
+                            obj={
+                                "error_output": repr(the_error),
+                                "normal_output": tuple(
+                                    YamlPickled(each)
+                                        for each in output
+                                ),
+                            },
+                        )
                     )
                 else:
-                    ez_yaml.to_file(
-                        obj={
+                    FS.write(
+                        path=path,
+                        data=ez_yaml.to_string(
+                            obj={
                             "error_output": repr(the_error),
                             "normal_output": YamlPickled(output),
                         },
-                        file_path=path
+                        )
                     )
             except Exception as error:
-                warn(f"\n\n\nFor a grug test on this function: {repr(function_name)} I tried to seralize the output but I wasn't able to.\nHere is the output type:\n    output: {type(output)}\nAnd here's the error: {error}", category=None, stacklevel=1, source=source)
+                FS.remove(path)
+                warn(f"\n\n\nFor a grug test on this function: {repr(function_name)}\n"+ indent(f"I tried to seralize the output but I wasn't able to.\nHere is the output type:\n    output: {type(output)}\nAnd here's the error: {indent(error)}\n"), category=None, stacklevel=1, source=source)
     
         return output, the_error
         
