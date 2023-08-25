@@ -1,13 +1,13 @@
 [tool.poetry]
 name = "grug_test"
 version = "0.0.1"
-description = "YOUR_DESCRIPTION"
+description = "Tests for lazy (smart) devs"
 authors=[]
 
 [tool.extra]
-author='YOUR_NAME_14057'
-author_email='YOUR_EMAIL'
-url='YOUR_GIT_REPO_URL'
+author='Jeff Hykin'
+author_email='jeff.hykin@gmail.com'
+url='https://github.com/jeff-hykin/grug_test_py'
 license = "MIT"
 main_module_path = "main/grug_test"
 
