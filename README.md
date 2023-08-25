@@ -1,6 +1,6 @@
 # What is this?
 
-This is a package that makes squashing bugs easy, SO easy that even lazy people like me can do it.
+Simple automated tests; for lazy devs who don't have time to test.
 
 # How do I use this?
 
