@@ -1,6 +1,6 @@
 # What is this?
 
-This is a package that makes squashing bugs easy, so easy that even lazy people like me can do it.
+This is a package that makes squashing bugs easy, SO easy that even lazy people like me can do it.
 
 # How do I use this?
 

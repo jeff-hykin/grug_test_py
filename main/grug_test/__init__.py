@@ -2,8 +2,8 @@ from warnings import warn
 import pickle
 import os
 
-from __dependencies__.ez_yaml import yaml
-from __dependencies__.blissful_basics import FS, bytes_to_valid_string, valid_string_to_bytes, indent, super_hash
+from .__dependencies__.ez_yaml import yaml
+from .__dependencies__.blissful_basics import FS, bytes_to_valid_string, valid_string_to_bytes, indent, super_hash
 
 # Version 1.0
     # add counting-caps (max IO for a particular function, or in-general)

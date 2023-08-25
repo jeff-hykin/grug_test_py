@@ -1,7 +1,12 @@
 {
     "pure_python_packages": {
-        "file_system_py": {
-            "path": "__sources__/file_system_py/main/file_system_py"
+        "blissful_basics": {
+            "git_url": "git@github.com:jeff-hykin/blissful_basics.git",
+            "path": "__sources__/blissful_basics/main/blissful_basics"
         },
+        "ez_yaml": {
+            "git_url": "git@github.com:jeff-hykin/ez_yaml.git",
+            "path": "__sources__/ez_yaml/main/ez_yaml"
+        }
     }
 }
