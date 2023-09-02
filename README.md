@@ -33,12 +33,13 @@ def repeat(a,times):
 
 3. That's all the setup!
 - `RECORD=True         python ./main.py` will record tests for you
-    - Commit your test cases to git
 - `RUN_TEST_CASES=True python ./main.py` will check your functions
-    - The git-diff will show you any problems
-        - If you like the changes, well volia, those are your freshly-written test cases; commit them.
-        - If you don't like the changes, well then it looks like you've got some dev work to do.
 - `PROD=True           python ./main.py` will run with grug totally disabled
+- Make sure to commit the generated tests to git
+    - When you do `RUN_TEST_CASES=True`, the git-diff will show you any problems
+    - If you like the changes, well ✨volia✨ the git changes are your freshly-written test cases
+    - If you don't like the changes, well then it looks like you've got some dev work to do
+    - thats it
 
 # Q&A
 
