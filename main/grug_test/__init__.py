@@ -12,7 +12,13 @@ from .__dependencies__.informative_iterator import ProgressBar
 
 # Version 1.0
     # DONE: add counting-caps (max IO for a particular function, or in-general)
+    # improve to_yaml(), allow deep recursion to make as much of the structure visible as possible
+        # maybe add named tuple support
+        # maybe add pandas dataframe support
+        # maybe add torch tensor support
     # add CLI tools
+        # capture all stdout/stderr
+        # run all .test.py files
     # create add_input_for(func_id, args, kwargs, input_name)
     # use threads to offload the work
     # report which tests have recordings but were not tested during replay mode (e.g. couldn't reach/find function)
