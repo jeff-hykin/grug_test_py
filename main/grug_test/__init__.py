@@ -60,6 +60,22 @@ class YamlPickled:
             style=None,
             anchor=None
         )
+
+# def is_probably_named_tuple(obj):
+#     return (
+#         isinstance(obj, tuple) and
+#         hasattr(obj, '_asdict') and
+#         hasattr(obj, '_fields')
+#     )
+
+# def to_yaml(obj):
+#     if isinstance(obj, (tuple, list)):
+#         return tuple(to_yaml(each) for each in obj)
+#     elif isinstance(obj, (dict)):
+#         return tuple(to_yaml(each) for each in obj)
+#     else:
+        
+        
 # 
 # add yaml representations for numpy values if possible
 # 
