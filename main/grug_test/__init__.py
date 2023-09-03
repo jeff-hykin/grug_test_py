@@ -12,6 +12,11 @@ from .__dependencies__.blissful_basics import FS, bytes_to_valid_string, valid_s
 from .__dependencies__.informative_iterator import ProgressBar
 
 # Version 1.0
+    # make API more local:
+        # grug_test(record=True, test=True, max=10, path="override/path")
+        # grug_test.force_disable_all = False
+        # grug_test.force_record_all = False
+        # grug_test.force_test_all = False
     # DONE: add counting-caps (max IO for a particular function, or in-general)
     # add a generated-time somewhere in the output to show when a test was last updated (maybe a .touch.yaml with commit hash, date and epoch)
     # check in-memory hash of prev-output and use that to not-overwrite outputs if they're the same
