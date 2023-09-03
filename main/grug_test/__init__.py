@@ -4,6 +4,7 @@ import os
 import math
 import random
 import functools
+import json
 
 from .__dependencies__.ez_yaml import yaml
 from .__dependencies__ import ez_yaml
@@ -12,6 +13,7 @@ from .__dependencies__.informative_iterator import ProgressBar
 
 # Version 1.0
     # DONE: add counting-caps (max IO for a particular function, or in-general)
+    # add a generated-time somewhere in the output to show when a test was last updated (maybe a .touch.yaml with commit hash, date and epoch)
     # check in-memory hash of prev-output and use that to not-overwrite outputs if they're the same
     # write to a temp file then move it to reduce partial-write problems
     # improve to_yaml(), allow deep recursion to make as much of the structure visible as possible
@@ -106,11 +108,11 @@ if True:
                 
             name = yaml_name or named_tuple_class.__name__
             if name in named_tuple_name_registry and named_tuple_class not in named_tuple_class_registry:
-                named_tuple_class_registry[the_class] = None
+                named_tuple_class_registry[named_tuple_class] = None
                 warn(f"(from grug_test) I try to auto-register named tuples so that they seralize nicely, however it looks like there are two named tuples that are both called {name}. Please rename one of them, or register one under a different name using:\n    from grug_test import register_named_tuple\n    register_named_tuple(SomeNamedTupleClass, 'SomeNamedTupleClass1234')")
             
             named_tuple_name_registry[name] = True
-            named_tuple_class_registry[the_class] = True
+            named_tuple_class_registry[named_tuple_class] = True
             named_tuple_class.yaml_tag = f"!python/named_tuple/{name}"
             named_tuple_class.from_yaml = lambda constructor, node: named_tuple_class(**json.loads(node.value))
             named_tuple_class.to_yaml = lambda representer, object_of_this_class: representer.represent_scalar(
@@ -234,7 +236,7 @@ if True:
     # helper
     # 
     def to_yaml(obj):
-        if isinstance(obj, (tuple, list)):
+        if type(obj) == tuple or type(obj) == list:
             return tuple(to_yaml(each) for each in obj)
         elif isinstance(obj, dict):
             return { 
@@ -242,7 +244,8 @@ if True:
                     for each_key, each_value in obj.items()
             }
         else:
-            if is_probably_named_tuple(obj):
+            is_named_tuple = is_probably_named_tuple(obj)
+            if is_named_tuple:
                 register_named_tuple(obj.__class__)
             try:
                 ez_yaml.to_string(obj)
