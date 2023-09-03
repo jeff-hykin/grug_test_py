@@ -12,6 +12,8 @@ from .__dependencies__.informative_iterator import ProgressBar
 
 # Version 1.0
     # DONE: add counting-caps (max IO for a particular function, or in-general)
+    # check in-memory hash of prev-output and use that to not-overwrite outputs if they're the same
+    # write to a temp file then move it to reduce partial-write problems
     # improve to_yaml(), allow deep recursion to make as much of the structure visible as possible
         # maybe add named tuple support
         # maybe add pandas dataframe support
@@ -313,7 +315,7 @@ class GrugTest:
     # 
     # decorator
     # 
-    def __call__(self, *args, save_to=None, func_name=None, max_io=None, record_io=None, additional_io_per_run=None, **kwargs):
+    def __call__(self, *args, skip=False, save_to=None, func_name=None, max_io=None, record_io=None, additional_io_per_run=None, **kwargs):
         """
         Example:
             grug_test = GrugTest(
@@ -332,6 +334,10 @@ class GrugTest:
                 add_nums(a,b)
         
         """
+        if skip:
+            # e.g. returns a decorator that does nothing
+            return lambda func: func
+        
         if record_io == None:
             record_io = self.record_io
         if max_io == None:
@@ -355,13 +361,14 @@ class GrugTest:
                 # 
                 # setup name/folder
                 # 
-                if not save_to:
-                    relative_path_to_function = FS.normalize(FS.make_relative_path(coming_from=self.project_folder, to=source))
-                    relative_path_to_test = self.test_folder+"/"+relative_path_to_function
-                    save_to = relative_path_to_test
+                relative_path_to_function = FS.normalize(FS.make_relative_path(coming_from=self.project_folder, to=source))
                 function_name = func_name or getattr(function_being_wrapped, "__name__", "<unknown_func>")
+                if not save_to:
+                    relative_path_to_test = self.test_folder+"/"+relative_path_to_function
+                    save_to = relative_path_to_test+"/"+function_name
+                
                 function_id = f"{relative_path_to_function}:{function_name}"
-                grug_folder_for_this_func = save_to+"/"+function_name
+                grug_folder_for_this_func = save_to
                 if function_id not in self.grug_info["functions_with_tests"]:
                     self.grug_info["functions_with_tests"].append(function_id)
                 
