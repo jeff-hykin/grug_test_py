@@ -61,21 +61,21 @@ class YamlPickled:
             anchor=None
         )
 
-# def is_probably_named_tuple(obj):
-#     return (
-#         isinstance(obj, tuple) and
-#         hasattr(obj, '_asdict') and
-#         hasattr(obj, '_fields')
-#     )
+def to_yaml(obj):
+    if isinstance(obj, (tuple, list)):
+        return tuple(to_yaml(each) for each in obj)
+    elif isinstance(obj, dict):
+        return { 
+            to_yaml(each_key): to_yaml(each_value)
+                for each_key, each_value in obj.items()
+        }
+    else:
+        try:
+            ez_yaml.to_string(obj)
+            return obj
+        except Exception as error:
+            return YamlPickled(obj)
 
-# def to_yaml(obj):
-#     if isinstance(obj, (tuple, list)):
-#         return tuple(to_yaml(each) for each in obj)
-#     elif isinstance(obj, (dict)):
-#         return tuple(to_yaml(each) for each in obj)
-#     else:
-        
-        
 # 
 # add yaml representations for numpy values if possible
 # 
@@ -357,37 +357,14 @@ class GrugTest:
                         # encase its a folder for some reason
                         FS.remove(input_file_path)
                         # if all the args are yaml-able this will work
-                        try:
-                            ez_yaml.to_file(
-                                file_path=input_file_path,
-                                obj=dict(
-                                    args=args,
-                                    kwargs=kwargs,
-                                    pickled_args_and_kwargs=YamlPickled(arg),
-                                ),
-                            )
-                        except Exception as error:
-                            # if all the args are at least pickle-able, this will work
-                            converted_args = list(args)
-                            converted_kwargs = dict(kwargs)
-                            for index,each in enumerate(converted_args):
-                                try:
-                                    ez_yaml.to_string(each)
-                                except Exception as error:
-                                    converted_args[index] = YamlPickled(each)
-                            for each_key, each_value in converted_kwargs.items():
-                                try:
-                                    ez_yaml.to_string(each_value)
-                                except Exception as error:
-                                    converted_kwargs[each_key] = YamlPickled(each_value)
-                            ez_yaml.to_file(
-                                file_path=input_file_path,
-                                obj=dict(
-                                    args=converted_args,
-                                    kwargs=converted_kwargs,
-                                    pickled_args_and_kwargs=YamlPickled(arg),
-                                )
-                            )
+                        ez_yaml.to_file(
+                            file_path=input_file_path,
+                            obj=dict(
+                                args=to_yaml(args),
+                                kwargs=to_yaml(kwargs),
+                                pickled_args_and_kwargs=YamlPickled(arg),
+                            ),
+                        )
                         input_files.append(input_file_path)
                 except Exception as error:
                     FS.remove(input_file_path)
@@ -448,30 +425,13 @@ class GrugTest:
             )
         except Exception as error:
             try:
-                # try to be informative if possible
-                if type(output) == tuple:
-                    new_output = list(output)
-                    for index, each in enumerate(output):
-                        try:
-                            ez_yaml.to_string(each)
-                        except Exception as error:
-                            new_output[index] = YamlPickled(each)
-                                    
-                    ez_yaml.to_file(
-                        file_path=path,
-                        obj={
-                            "error_output": repr(the_error),
-                            "normal_output": new_output,
-                        },
-                    )
-                else:
-                    ez_yaml.to_file(
-                        file_path=path,
-                        obj={
-                            "error_output": repr(the_error),
-                            "normal_output": YamlPickled(output),
-                        },
-                    )
+                ez_yaml.to_file(
+                    file_path=path,
+                    obj={
+                        "error_output": repr(the_error),
+                        "normal_output": to_yaml(new_output),
+                    },
+                )
             except Exception as error:
                 FS.remove(path)
                 warn(f"\n\n\nFor a grug test on this function: {repr(function_name)}\n"+ indent(f"I tried to seralize the output but I wasn't able to.\nHere is the output type:\n    output: {type(output)}\nAnd here's the error: {indent(error)}\n"), category=None, stacklevel=1, source=source)
