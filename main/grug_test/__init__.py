@@ -63,7 +63,7 @@ if True:
             prefix = f"{type(data.value)}".replace(YamlPickled.delimiter, "")
             if prefix.startswith("<class '") and prefix.endswith("'>"):
                 prefix = prefix[8:-2]
-                
+            
             # value needs to be a string (or some other yaml-primitive)
             return representer.represent_scalar(
                 tag=cls.yaml_tag,
@@ -114,13 +114,8 @@ if True:
             named_tuple_name_registry[name] = True
             named_tuple_class_registry[named_tuple_class] = True
             named_tuple_class.yaml_tag = f"!python/named_tuple/{name}"
-            named_tuple_class.from_yaml = lambda constructor, node: named_tuple_class(**json.loads(node.value))
-            named_tuple_class.to_yaml = lambda representer, object_of_this_class: representer.represent_scalar(
-                tag=named_tuple_class.yaml_tag,
-                value=json.dumps(object_of_this_class._asdict()),
-                style=None,
-                anchor=None
-            )
+            named_tuple_class.from_yaml = lambda constructor, node: named_tuple_class(node.value)
+            named_tuple_class.to_yaml = lambda representer, object_of_this_class: representer.represent_mapping(tag=named_tuple_class.yaml_tag, mapping=object_of_this_class._asdict())
             
             yaml.register_class(named_tuple_class)
             return named_tuple_class
@@ -247,10 +242,14 @@ if True:
             is_named_tuple = is_probably_named_tuple(obj)
             if is_named_tuple:
                 register_named_tuple(obj.__class__)
+                # recursively register
+                tuple(to_yaml(each) for each in obj)
             try:
                 ez_yaml.to_string(obj)
                 return obj
             except Exception as error:
+                if is_named_tuple:
+                    raise error
                 return YamlPickled(obj)
 
 class GrugTest:
@@ -282,6 +281,7 @@ class GrugTest:
         record_io=True,
         verbose=False,
         max_io_per_func=None,
+        redo_inputs=False,
         overflow_strat="keep_old",
         project_folder="./", # FIXME: walk up until .git
         test_folder="./tests/grug_tests/", # FIXME: walk up until .git
@@ -294,6 +294,7 @@ class GrugTest:
         self.verbose         = verbose
         self.overflow_strat  = overflow_strat
         self.max_io_per_func = max_io_per_func if max_io_per_func != None else math.inf
+        self.redo_inputs     = redo_inputs
         self.project_folder  = project_folder
         self.test_folder     = test_folder
         
@@ -442,6 +443,9 @@ class GrugTest:
                     # input limiter
                     # 
                     input_already_existed = FS.is_file(input_file_path)
+                    if input_already_existed and self.redo_inputs:
+                        FS.remove(input_file_path)
+                        input_already_existed = False
                     if is_overflowing and not input_already_existed and self.overflow_strat == 'delete_random':
                         input_to_delete  = randomly_pick_from(input_files)
                         output_to_delete = input_to_delete[0:-len(self.input_file_extension)]+self.output_file_extension
