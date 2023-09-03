@@ -114,7 +114,10 @@ if True:
             named_tuple_name_registry[name] = True
             named_tuple_class_registry[named_tuple_class] = True
             named_tuple_class.yaml_tag = f"!python/named_tuple/{name}"
-            named_tuple_class.from_yaml = lambda constructor, node: named_tuple_class(node.value)
+            named_tuple_class.from_yaml = lambda constructor, node: named_tuple_class(**{
+                key_node.value: value_node.value
+                    for key_node, value_node in node.value
+            })
             named_tuple_class.to_yaml = lambda representer, object_of_this_class: representer.represent_mapping(tag=named_tuple_class.yaml_tag, mapping=object_of_this_class._asdict())
             
             yaml.register_class(named_tuple_class)
