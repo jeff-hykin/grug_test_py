@@ -10,33 +10,30 @@ Simple automated tests; for [grug](https://grugbrain.dev/) devs like me who don'
 In your `main.py` equivlent:
 
 ```python
-from grug_test import GrugTest
+from grug_test import GrugTest, grug_test
 import os
 
 # 1. say where the tests will be saved
-grug_test = GrugTest(
-    project_folder=".",
-    test_folder="./tests/grug_tests",
-    fully_disable=os.environ.get("PROD")!=None,
-    replay_inputs=os.environ.get("RUN_TEST_CASES")!=None,
-    record_io=os.environ.get("RECORD")!=None,
-)
+GrugTest.force_fully_disable = os.environ.get("PROD")!=None
+GrugTest.default_record_io = os.environ.get("GRUG_RECORD")!=None
+GrugTest.default_run_tests = os.environ.get("GRUG_TEST")!=None
 
 # 2. slap @grug_test on any of your pure-functions
-@grug_test(max_io=100)
+@grug_test(max_io=20) # max_io is basically "max number of recorded tests"
 def repeat(a,times):
     for _ in range(times):
         a += f"{a}"
     return a
 
+# [[Use your function like you normally would]]
 ```
 
 3. That's all the setup!
-- `RECORD=True         python ./main.py` will record tests for you
-- `RUN_TEST_CASES=True python ./main.py` will check your functions
-- `PROD=True           python ./main.py` will run with grug totally disabled
+- `GRUG_RECORD=True     python ./main.py` will record the inputs/outputs of the function
+- `GRUG_TEST=True       python ./main.py` will load the saved inputs, and run and save the new outputs
+- `PROD=True           python ./main.py` totally disables grug_test
 - Make sure to commit the generated tests to git
-    - When you do `RUN_TEST_CASES=True`, the git-diff will show you any problems
+    - When you do `GrugTest=True`, the git-diff will show you any problems
     - If you like the changes, well ✨volia✨ the git changes are your freshly-written test cases
     - If you don't like the changes, well then it looks like you've got some dev work to do
     - thats it
