@@ -23,7 +23,7 @@ from .__dependencies__.informative_iterator import ProgressBar
         # grug_test.force_disable_all = False
         # grug_test.force_record_all = False
         # grug_test.force_test_all = False
-    # add a generated-time somewhere in the output to show when a test was last updated (maybe a .touch.yaml with commit hash, date and epoch)
+    # add a generated-time somewhere in the output to show when a test was last updated (maybe a .touch.yaml with commit hash, human readable date and epoch, and calculation time)
     # check in-memory hash of prev-output and use that to not-overwrite outputs if they're the same
     # write to a temp file then move it to reduce partial-write problems
     # improve to_yaml(), allow deep recursion to make as much of the structure visible as possible
