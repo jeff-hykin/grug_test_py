@@ -7,6 +7,7 @@ import math
 import random
 import functools
 import json
+import atexit
 
 from .__dependencies__.ez_yaml import yaml
 from .__dependencies__ import ez_yaml
@@ -14,13 +15,15 @@ from .__dependencies__.blissful_basics import FS, bytes_to_valid_string, valid_s
 from .__dependencies__.informative_iterator import ProgressBar
 
 # Version 1.0
+    # DONE: add counting-caps (max IO for a particular function, or in-general)
+    # DONE: run tests atexit to avoid import errors
+    # have grug_test recurse down from CWD instead of having project_folder and test_folder
     # create a global list of registered named tuples to make sure all are loaded (and the same) before replaying inputs 
     # make API more local:
         # grug_test(record=True, test=True, max=10, path="override/path")
         # grug_test.force_disable_all = False
         # grug_test.force_record_all = False
         # grug_test.force_test_all = False
-    # DONE: add counting-caps (max IO for a particular function, or in-general)
     # add a generated-time somewhere in the output to show when a test was last updated (maybe a .touch.yaml with commit hash, date and epoch)
     # check in-memory hash of prev-output and use that to not-overwrite outputs if they're the same
     # write to a temp file then move it to reduce partial-write problems
@@ -31,11 +34,12 @@ from .__dependencies__.informative_iterator import ProgressBar
     # add CLI tools
         # capture all stdout/stderr
         # run all .test.py files
+    # add checker to see if the function signature has changed, offer to clear existing tests
     # create add_input_for(func_id, args, kwargs, input_name)
     # use threads to offload the work
     # report which tests have recordings but were not tested during replay mode (e.g. couldn't reach/find function)
-    # autodetect the git folder
 # Version 2.0
+    # add checker to see if the function signature has changed, offer to clear existing tests
     # fuzzing/coverage-tools; like analyzing boolean arguments, and generating inputs for all combinations of them
     # option to record stdout/stderr of a function
     # add `additional_inputs` in the decorator
@@ -122,18 +126,23 @@ if True:
                 field_summary = ",".join(fields)
                 return f'{the_class.__name__}({field_summary})'
         
-        def register_named_tuple(named_tuple_class, yaml_name=None):
+        def register_named_tuple(named_tuple_class=None, yaml_name=None):
+            # if called as a decorator with a yaml_name argument
+            if named_tuple_class == None:
+                return lambda func: register_named_tuple(func, yaml_name=yaml_name)
+            
             # already registered
             if named_tuple_class_registry.get(named_tuple_class, None):
                 return named_tuple_class
             
             name = yaml_name or named_tuple_class.__name__
-            if name in named_tuple_name_registry and named_tuple_class not in named_tuple_class_registry:
+            if name in named_tuple_name_registry and not (named_tuple_class in named_tuple_class_registry):
                 named_tuple_class_registry[named_tuple_class] = None
-                warn(f"(from grug_test) I try to auto-register named tuples so that they seralize nicely, however it looks like there are two named tuples that are both called {name}. Please rename one of them, or register one under a different name using:\n    from grug_test import register_named_tuple\n    register_named_tuple(SomeNamedTupleClass, 'SomeNamedTupleClass1234')")
+                if named_tuple_summary(named_tuple_class) != named_tuple_summary(named_tuple_name_registry[name]):
+                    warn(f"\n\n(from grug_test) I try to auto-register named tuples so that they seralize nicely, however it looks like there are two named tuples that are both called {name}.\nPlease rename one of them, or register one under a different name using:\n    from grug_test import register_named_tuple\n    register_named_tuple({name}, '{name}1234')\n\n")
             
-            named_tuple_name_registry[name] = True
-            named_tuple_class_registry[named_tuple_class] = True
+            named_tuple_name_registry[name] = named_tuple_class
+            named_tuple_class_registry[named_tuple_class] = name
             named_tuple_class.yaml_tag = f"!python/named_tuple/{name}"
             named_tuple_class.from_yaml = lambda constructor, node: named_tuple_class(**ez_yaml.ruamel.yaml.BaseConstructor.construct_mapping(constructor, node, deep=True))
             named_tuple_class.to_yaml = lambda representer, object_of_this_class: representer.represent_mapping(tag=named_tuple_class.yaml_tag, mapping=object_of_this_class._asdict())
@@ -145,21 +154,18 @@ if True:
     # todo: from dataclasses import dataclass
     #
                 
-            
     # 
     # numpy support
     # 
     if True:
-        has_numpy = False
+        numpy = None
         try:
             import numpy
-            has_numpy = True
         except Exception as error:
             pass
         
-        if has_numpy:
+        if numpy:
             try:
-                import numpy
                 ez_yaml.yaml.Representer.add_representer(
                     numpy.ndarray,
                     lambda dumper, data: dumper.represent_sequence(tag='python/numpy/ndarray', sequence=data.tolist()), 
@@ -274,6 +280,7 @@ if True:
                     raise error
                 return YamlPickled(obj)
 
+replay_inputs_at_end = []
 class GrugTest:
     """
         Example:
@@ -387,13 +394,11 @@ class GrugTest:
                 # 
                 # setup name/folder
                 # 
-                relative_path_to_function = FS.normalize(FS.make_relative_path(coming_from=self.project_folder, to=FS.normalize(source)))
                 function_name = func_name or getattr(function_being_wrapped, "__name__", "<unknown_func>")
                 if not save_to:
-                    relative_path_to_test = self.test_folder+"/"+relative_path_to_function
-                    save_to = relative_path_to_test+"/"+function_name
+                    save_to = f"{source}.grug/{function_name}"
                 
-                function_id = f"{relative_path_to_function}:{function_name}"
+                function_id = f"{source}:{function_name}"
                 grug_folder_for_this_func = save_to
                 if function_id not in self.grug_info["functions_with_tests"]:
                     self.grug_info["functions_with_tests"].append(function_id)
@@ -408,38 +413,38 @@ class GrugTest:
                 # replay inputs
                 # 
                 if self.replay_inputs and not self.has_been_tested.get(function_id, False):
-                    if self.verbose: print(f"replaying inputs for: {function_name}")
-                    decorator.replaying_inputs = True
-                    original_record_io_value = decorator.record_io
-                    for progress, path in ProgressBar(input_files, disable_logging=not self.verbose):
-                        progress.text = f" loading: {FS.basename(path)}"
-                        try:
-                            inputs = ez_yaml.to_object(file_path=path)
-                            args = inputs["args"]
-                            kwargs = inputs["kwargs"]
+                    def replay_inputs():
+                        if self.verbose: print(f"replaying inputs for: {function_name}")
+                        decorator.replaying_inputs = True
+                        for progress, path in ProgressBar(input_files, disable_logging=not self.verbose):
+                            progress.text = f" loading: {FS.basename(path)}"
+                            with ErrorCatcher() as error_catcher:
+                                inputs = ez_yaml.to_object(file_path=path)
+                                args = inputs["args"]
+                                kwargs = inputs["kwargs"]
+                                
+                                # args, kwargs = ez_yaml.to_object(file_path=path)["pickled_args_and_kwargs"]
+                                output, the_error = self.record_output(
+                                    function_being_wrapped,
+                                    args,
+                                    kwargs,
+                                    path=path[0:-len(self.input_file_extension)] + self.output_file_extension,
+                                    function_name=function_name,
+                                    source=source,
+                                    verbose=True,
+                                )
                             
-                            # args, kwargs = ez_yaml.to_object(file_path=path)["pickled_args_and_kwargs"]
-                            output, the_error = self.record_output(
-                                function_being_wrapped,
-                                args,
-                                kwargs,
-                                path=path[0:-len(self.input_file_extension)] + self.output_file_extension,
-                                function_name=function_name,
-                                source=source,
-                                verbose=True,
-                            )
-                        except Exception as error:
-                            # corrupted file
-                            if FS.read(path) == "":
-                                FS.remove(path)
-                                continue
-                            
-                            if self.verbose:
-                                print(f"\n\ncorrupted_input: {path}\n    {error}")
-                            else:
-                                warn(f"\n\ncorrupted_input: {path}\n    {error}")
-                    decorator.replaying_inputs = False
-                    self.has_been_tested[function_id] = True
+                            if error_catcher.error:
+                                content = FS.read(path)
+                                # corrupted file
+                                if content == "" or not ((content or "").strip().endswith("...")):
+                                    FS.remove(path)
+                                    continue
+                                
+                                print(f"\n    corrupted_input: {path}\n\n{indent(indent(traceback_to_string(error_catcher.traceback)))}\n\n{error_catcher.error}\n")
+                        decorator.replaying_inputs = False
+                        self.has_been_tested[function_id] = True
+                    replay_inputs_at_end.append(replay_inputs)
             
             @functools.wraps(function_being_wrapped) # fixes the stack-trace to make the decorator invisible
             def wrapper(*args, **kwargs):
@@ -556,11 +561,12 @@ class GrugTest:
         # encase its a folder for some reason
         FS.remove(path)
         try:
+            traceback_string = traceback_to_string(error_catcher.traceback).strip()
             ez_yaml.to_file(
                 file_path=path,
                 obj={
                     "error_output": repr(the_error),
-                    "traceback": traceback_to_string(error_catcher.traceback),
+                    "traceback": "" if len(traceback_string) == 0 else ez_yaml.ruamel.yaml.scalarstring.LiteralScalarString(traceback_string),
                     "normal_output": to_yaml(output),
                 },
                 settings=dict(
@@ -595,3 +601,10 @@ def _get_path_of_caller(*paths):
     else:
         # See note at the top
         return FS.join(intial_cwd, directory, *paths)
+
+
+
+@atexit.register
+def eventually():
+    for each in replay_inputs_at_end:
+        each()
