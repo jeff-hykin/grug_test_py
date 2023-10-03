@@ -15,34 +15,32 @@ from .__dependencies__.blissful_basics import FS, bytes_to_valid_string, valid_s
 from .__dependencies__.informative_iterator import ProgressBar
 
 # Version 1.0
-    # DONE: add counting-caps (max IO for a particular function, or in-general)
-    # DONE: run tests atexit to avoid import errors
-    # create a global list of registered named tuples to make sure all are loaded (and the same) before replaying inputs 
-    # DONE: make API more local:
-        # grug_test(record=True, test=True, max=10, path="override/path")
-        # grug_test.force_disable_all = False
-        # grug_test.force_record_all = False
-        # grug_test.force_test_all = False
-    # add a generated-time somewhere in the output to show when a test was last updated (maybe a .touch.yaml with commit hash, human readable date and epoch, and calculation time)
-    # check in-memory hash of prev-output and use that to not-overwrite outputs if they're the same
-    # write to a temp file then move it to reduce partial-write problems
-    # improve to_yaml(), allow deep recursion to make as much of the structure visible as possible
-        # DONE: maybe add named tuple support
-        # DONE: maybe add named numpy support
-        # maybe add pandas dataframe support
-        # maybe add torch tensor support
     # add CLI tools
-        # capture all stdout/stderr
-        # run all .test.py files
-    # add checker to see if the function signature has changed, offer to clear existing tests
-    # create add_input_for(func_id, args, kwargs, input_name)
-    # use threads to offload the work
-    # report which tests have recordings but were not tested during replay mode (e.g. couldn't reach/find function)
+        # accept an arg, run a executable, capture all stdout/stderr
+        # recursively run everything in .grug folders with .test.py in the name
+        # somehow run all those^ with GrugTest.force_run_tests = True
+    # add_input_for(func_id, args, kwargs, input_name)
+    # corruption prevention:
+        # write to a temp file then move it to reduce partial-write corruption
+    # auto-clearing feature:
+        # if the function signature changes (kwarg rename, number_of_required_arguments change, etc)
+        # => offer to delete the existing tests
+    # IO metadata     
+        # add a generated-time somewhere in the output to show when a test was last updated (maybe a .touch.yaml with commit hash, human readable date and epoch, and calculation time)
+    # optional:
+        # use threads to offload the recording work
+        # check in-memory hash of prev-output and use that to not-overwrite outputs if they're the same
+        # improve to_yaml(), allow deep recursion to make as much of the structure visible as possible
+            # create a global list of registered named tuples to make sure all are loaded (and the same) before replaying inputs 
+            # DONE: maybe add named tuple support
+            # DONE: maybe add named numpy support
+            # maybe add pandas dataframe support
+            # maybe add torch tensor support
+    
 # Version 2.0
-    # add checker to see if the function signature has changed, offer to clear existing tests
     # fuzzing/coverage-tools; like analyzing boolean arguments, and generating inputs for all combinations of them
     # option to record stdout/stderr of a function
-    # add `additional_inputs` in the decorator
+    # consider add `additional_inputs` in the decorator
     # add file path args to the decorator that create file copies, then inject/replace the path arguments
 
 
